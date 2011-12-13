@@ -15,7 +15,7 @@
 #   You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# TODO: * Using Thread::Pool instead of thread
+# TODO * Using Thread::Pool instead of thread
 
 use Getopt::Long;
 use Data::Dumper;
@@ -52,7 +52,7 @@ if (   !defined($dev)
 	|| !defined($target)
 	|| defined($help) )
 {
-	usage();
+	&usage();
 	exit();
 }
 $cicle  = 10 if !defined($cicle);
@@ -74,6 +74,33 @@ sub killthreads() {
 		}
 	}
 }
+
+sub usage() {
+	print "
+	" . $PROG . " v" . $VERSION . "
+	" . $PROG . " Performs an wifi jammer attack, that means that on the specified 
+	access point only you and ony others specified MAC address will remain here.
+		
+	" . $0
+	  . " --dev [DEVICE] --target [TARGET] --channel [CHANNEL] --cycle [CYCLE] --deauth [DEAUTH] --exclude [MAC_1] [MAC_2] [...] --verbose --direct
+	
+	Where:
+	[DEVICE] is your device addres (monitor mode on)
+	[TARGET] is the Access Point mac address
+	[CHANNEL] is the channel where the Access point and the clients are...
+	[CYCLE] Cicle time for checking new clients
+	[DEAUTH] is the deauth count of aireplay
+	[MAC_1] [MAC_2] [...] Mac addresses to exclude from the deauth process
+	option --direct it's using the direct client deauth on aireplay (-c option)
+	
+	E.G. 
+	" . $0
+	  . " --dev mon0 --target AP:MAC:FF:AA:AA:AA --channel 11 --deauth 10 --cycle 20 --exclude MY:MAC:FF:AA:AA:AA  --direct --xterm
+
+	\n";
+
+}
+
 
 sub message() {
 
@@ -232,7 +259,7 @@ while ( sleep $cicle ) {
 						}
 						if ( $is_excluded == 0 ) {
 							my $exists = 0;
-							while ( ( $key, $value ) = each(%threads) ) {
+							foreach my $value( values %threads) {
 								if ( $value eq $KILL ) {
 									$exists = 1;
 								}
@@ -346,28 +373,3 @@ sub jamming {
 	threads->yield();
 }
 
-sub usage() {
-	print "
-	" . $PROG . " v" . $VERSION . "
-	" . $PROG . " Performs an wifi jammer attack, that means that on the specified 
-	access point only you and ony others specified MAC address will remain here.
-		
-	" . $0
-	  . " --dev [DEVICE] --target [TARGET] --channel [CHANNEL] --cycle [CYCLE] --deauth [DEAUTH] --exclude [MAC_1] [MAC_2] [...] --verbose --direct
-	
-	Where:
-	[DEVICE] is your device addres (monitor mode on)
-	[TARGET] is the Access Point mac address
-	[CHANNEL] is the channel where the Access point and the clients are...
-	[CYCLE] Cicle time for checking new clients
-	[DEAUTH] is the deauth count of aireplay
-	[MAC_1] [MAC_2] [...] Mac addresses to exclude from the deauth process
-	option --direct it's using the direct client deauth on aireplay (-c option)
-	
-	E.G. 
-	" . $0
-	  . " --dev mon0 --target AP:MAC:FF:AA:AA:AA --channel 11 --deauth 10 --cycle 20 --exclude MY:MAC:FF:AA:AA:AA  --direct --xterm
-
-	\n";
-
-}
