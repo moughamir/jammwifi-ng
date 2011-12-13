@@ -60,7 +60,14 @@ $deauth = 10 if !defined($deauth);
 my %threads;
 my $file;
 my $tree = XML::TreeBuilder->new();
-
+$SIG{'INT'} = sub {
+	my $running = threads->list(threads::all);
+	&message( "Signal received, stopping all threads",      "Sighandler", 1 );
+	&message( $running . " process are going to be killed", "Sighandler", 1 );
+	&killthreads();
+	&message( "All clear, exiting", "Sighandler", 1 );
+	exit();
+};
 sub killthreads() {
 	my $tid     = $_[0];
 	my @running = threads->list(threads::all);
@@ -209,14 +216,7 @@ foreach my $excluded (@EXCLUDED_MAC) {
 }
 `rm -rfv *.netxml`;
 
-$SIG{'INT'} = sub {
-	my $running = threads->list(threads::all);
-	&message( "Signal received, stopping all threads",      "Sighandler", 1 );
-	&message( $running . " process are going to be killed", "Sighandler", 1 );
-	&killthreads();
-	&message( "All clear, exiting", "Sighandler", 1 );
-	exit();
-};
+
 
 while ( sleep $cicle ) {
 	@XML = <*.netxml>;
