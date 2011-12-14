@@ -42,18 +42,62 @@ my $result = GetOptions(
 	"deauth=s"     => \$deauth,
 	"direct"       => \$direct,
 	"help"         => \$help,
+	"scan"			=>\$scan,
 	"exclude=s{,}" => \@EXCLUDED_MAC,
 	"xterm"        => \$xterm,
 	"verbose"      => \$verbose
 );
 
 if (   !defined($dev)
-	|| !defined($channel)
-	|| !defined($target)
+	|| (!defined($channel) && !defined($scan))
+	|| (!defined($target) && !defined($scan))
 	|| defined($help) )
 {
 	&usage();
 	exit();
+}
+
+
+if(defined($scan)){
+	&message("Initializing scan for the wireless networks in range..","Scan",0);
+open(LIST, "/sbin/iwlist scan 2>&1 |") or die "Failed: $!\n";
+
+my %wifis;
+my $essid;
+while (<LIST>) {
+
+        if (/ESSID\:\"(.*)\"/) { $essid = $1; }
+        elsif (/Quality=(\d*)\/70/) { $quality= $1; }
+        elsif (/Address:\s+(.*)/) { $address= $1; }
+        elsif (/Channel:(.*)/) { $channel= $1; }
+        elsif (/Encryption key\:(\S*)/) {  $key= $1; }
+        elsif (/IE\:/i){
+			if($essid ne ""){
+				$wifis{$essid}->{"quality"}=$quality;
+				$wifis{$essid}->{"address"}=$address;
+				$wifis{$essid}->{"key"}=$key;
+				$wifis{$essid}->{"channel"}=$channel;
+			}
+		}
+}
+
+my $choise=0;
+my %list;
+	&message( "#\tEssid\t\tAddress\t\t\tChannel","Scan",1);
+
+foreach $essid ( keys %wifis) {
+	$choise++;
+	$list{$choise}=$essid;
+	&message( $choise.") \t". $essid."\t".$wifis{$essid}->{"address"}."\t".$wifis{$essid}->{"channel"},"Scan",1);
+}
+&message("Your choise:","Scan",0);
+my $t=<STDIN>;
+chomp($t);
+&message("Your choise is: ".$list{$t}." ". $wifis{$list{$t}}->{"address"},"Scan",1);
+	$target=$wifis{$list{$t}}->{"address"};
+	$channel=$wifis{$list{$t}}->{"channel"};
+	
+	
 }
 $cicle  = 10 if !defined($cicle);
 $deauth = 10 if !defined($deauth);
