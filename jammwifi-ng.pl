@@ -55,6 +55,7 @@ if (   !defined($dev)
 	&usage();
 	exit();
 }
+$target=uc($target);
 $cicle  = 10 if !defined($cicle);
 $deauth = 10 if !defined($deauth);
 my %threads;
@@ -213,6 +214,7 @@ $airodump =
 
 foreach my $excluded (@EXCLUDED_MAC) {
 	&message( $excluded, "Excluded", 1 );
+	$excluded=uc($excluded);
 }
 `rm -rfv *.netxml`;
 
