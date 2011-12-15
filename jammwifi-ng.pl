@@ -39,6 +39,7 @@ my $result = GetOptions(
 	"channel=s"    => \$channel,
 	"target=s"     => \$target,
 	"cycle=s"      => \$cicle,
+	"first-jam" 	=> \$first_jam,
 	"deauth=s"     => \$deauth,
 	"direct"       => \$direct,
 	"help"         => \$help,
@@ -90,7 +91,7 @@ sub usage() {
 	access point only you and ony others specified MAC address will remain here.
 		
 	" . $0
-	  . " --dev [DEVICE] --target [TARGET] --channel [CHANNEL] --cycle [CYCLE] --deauth [DEAUTH] --exclude [MAC_1] [MAC_2] [...] --verbose --direct
+	  . "--first-jam --dev [DEVICE] --target [TARGET] --channel [CHANNEL] --cycle [CYCLE] --deauth [DEAUTH] --exclude [MAC_1] [MAC_2] [...] --verbose --direct
 	
 	Where:
 	[DEVICE] is your device addres (monitor mode on)
@@ -100,6 +101,7 @@ sub usage() {
 	[DEAUTH] is the deauth count of aireplay
 	[MAC_1] [MAC_2] [...] Mac addresses to exclude from the deauth process
 	option --direct it's using the direct client deauth on aireplay (-c option)
+	option --first-jam enable first jamming to all the clients over the network
 	
 	E.G. 
 	" . $0
@@ -207,14 +209,18 @@ if ( defined($xterm) ) {
 else {
 	$xterm = 0;
 }
+
+if(defined($first_jam)){
 $aireplay = threads->create( 'jamming', $target, $target, $dev, $deauth, 0, 0 );
 $aireplay->join();
+}
 $airodump =
   threads->create( 'airodump', $dev, $channel, $deauth, $xterm, $target );
 
 foreach my $excluded (@EXCLUDED_MAC) {
+		$excluded=uc($excluded);
+	
 	&message( $excluded, "Excluded", 1 );
-	$excluded=uc($excluded);
 }
 `rm -rfv *.netxml`;
 
