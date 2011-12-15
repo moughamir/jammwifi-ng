@@ -225,9 +225,9 @@ while ( sleep $cicle ) {
 	my @joinable_threads = threads->list(threads::joinable);
 	my $joined           = 0;
 	foreach my $joinable (@joinable_threads) {
-		my $tmptid= $joinable->tid();
+		$tmptid=$joinable->tid();
 		$joinable->join();
-		delete $threads{ $$tmptid };
+		delete $threads{$tmptid };
 		$joined++;
 	}
 	&message( "joined " . $joined . " threads", "Threads", 0 );
